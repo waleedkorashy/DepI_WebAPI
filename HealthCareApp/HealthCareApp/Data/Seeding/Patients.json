@@ -1,0 +1,24 @@
+// fill this file with sample patient data in json format each patient should have the followoing properties: Name(use Arabic names written in english), DateOfBirth, Include 5 sample patients with realistic data.
+
+[
+  {
+    "Name": "Ahmed Yasser",
+    "DateOfBirth": "1985-03-15"
+  },
+  {
+    "Name": "Fatima Al-Mansoori",
+    "DateOfBirth": "1990-07-22"
+  },
+  {
+    "Name": "Mohammed Hassan",
+    "DateOfBirth": "1978-11-05"
+  },
+  {
+    "Name": "Aisha Khalifa",
+    "DateOfBirth": "1995-01-30"
+  },
+  {
+    "Name": "Youssef Sayed",
+    "DateOfBirth": "1982-09-12"
+  }
+]

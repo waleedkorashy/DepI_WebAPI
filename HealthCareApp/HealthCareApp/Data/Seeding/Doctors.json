@@ -1,0 +1,23 @@
+// fill this file with sample doctor data in json format each doctor should have the following properties: Name(use Arabic names written in english), Speciality, Include 5 sample doctors with realistic data.
+[
+  {
+    "Name": "Dr. Layla Fahad",
+    "Speciality": "Cardiology"
+  },
+  {
+    "Name": "Dr. Omar Saleh",
+    "Speciality": "Neurology"
+  },
+  {
+    "Name": "Dr. Sara Hassan",
+    "Speciality": "Pediatrics"
+  },
+  {
+    "Name": "Dr. Khalid Mutairi",
+    "Speciality": "Orthopedics"
+  },
+  {
+    "Name": "Dr. Amina Rashid",
+    "Speciality": "Dermatology"
+  }
+]

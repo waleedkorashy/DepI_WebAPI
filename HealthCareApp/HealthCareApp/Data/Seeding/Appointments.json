@@ -1,0 +1,28 @@
+// fill this file with sample appointment data in json format each appointment should have the following properties: PatientId, DoctorId, AppointmentDate, Include 5 sample appointments with realistic data.
+[
+  {
+    "PatientId": 1,
+    "DoctorId": 2,
+    "AppointmentDate": "2024-07-15T10:30:00"
+  },
+  {
+    "PatientId": 3,
+    "DoctorId": 1,
+    "AppointmentDate": "2024-07-16T14:00:00"
+  },
+  {
+    "PatientId": 2,
+    "DoctorId": 3,
+    "AppointmentDate": "2024-07-17T09:00:00"
+  },
+  {
+    "PatientId": 5,
+    "DoctorId": 4,
+    "AppointmentDate": "2024-07-18T11:15:00"
+  },
+  {
+    "PatientId": 4,
+    "DoctorId": 5,
+    "AppointmentDate": "2024-07-19T13:45:00"
+  }
+]

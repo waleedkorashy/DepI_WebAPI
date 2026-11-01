@@ -22,7 +22,7 @@ namespace LibraryApp.Controllers
         [HttpGet("GetAllBooks")]
         public async Task<IActionResult> GetAllBooks()
         {
-            var Books = await _dbContext.Books.ToListAsync();
+            var Books = await _dbContext.Books.Include(b => b.Author).ToListAsync();
             if (Books == null || !Books.Any())
             {
                 return NotFound("No books found.");
@@ -31,7 +31,8 @@ namespace LibraryApp.Controllers
             {
                 Title = b.Title,
                 ISBN = b.ISBN,
-                AuthorId = b.AuthorId
+                AuthorId = b.AuthorId,
+                AuthorName = b.Author.Name
             }).ToList();
             return Ok(response);
             
@@ -41,7 +42,7 @@ namespace LibraryApp.Controllers
         [HttpGet("GetBookById/{id}")]
         public async Task<IActionResult> GetBookByID(int id)
         {
-            var Book = await _dbContext.Books.FindAsync(id);
+            var Book = await _dbContext.Books.Include(b => b.Author).FirstOrDefaultAsync(b => b.Id == id);
             if (Book == null) 
             {
                 return NotFound("No such book with the passed ID");
@@ -50,7 +51,8 @@ namespace LibraryApp.Controllers
             {
                 Title = Book.Title,
                 ISBN = Book.ISBN,
-                AuthorId = Book.AuthorId
+                AuthorId = Book.AuthorId,
+                AuthorName = Book.Author.Name
             };
             return Ok(response);
         }

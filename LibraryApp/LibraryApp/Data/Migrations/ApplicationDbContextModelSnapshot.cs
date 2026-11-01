@@ -50,7 +50,8 @@ namespace LibraryApp.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.HasKey("Id");
 
@@ -88,7 +89,8 @@ namespace LibraryApp.Migrations
 
                     b.Property<string>("Title")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.HasKey("Id");
 
@@ -128,7 +130,8 @@ namespace LibraryApp.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.HasKey("Id");
 
@@ -158,8 +161,8 @@ namespace LibraryApp.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
-                    b.Property<DateOnly>("LoanDate")
-                        .HasColumnType("date");
+                    b.Property<DateTime>("LoanDate")
+                        .HasColumnType("datetime2");
 
                     b.Property<DateTime?>("ModifiedAt")
                         .HasColumnType("datetime2");
@@ -167,8 +170,8 @@ namespace LibraryApp.Migrations
                     b.Property<Guid?>("ModifiedBy")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<DateOnly>("ReturnDate")
-                        .HasColumnType("date");
+                    b.Property<DateTime>("ReturnDate")
+                        .HasColumnType("datetime2");
 
                     b.HasKey("Id");
 

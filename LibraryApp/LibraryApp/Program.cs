@@ -20,6 +20,8 @@ namespace LibraryApp
             builder.Services.AddServices(builder.Configuration);
 
             var app = builder.Build();
+
+
             #region Seeding
 
             using var scope = app.Services.CreateScope();
