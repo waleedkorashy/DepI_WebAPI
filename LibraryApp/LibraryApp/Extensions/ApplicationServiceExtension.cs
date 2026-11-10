@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.HttpLogging;
 using Microsoft.EntityFrameworkCore;
 using LibraryApp.Data;
+using AutoMapper;
 
 
 namespace LibraryApp.Extensions
