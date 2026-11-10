@@ -1,107 +1,116 @@
-﻿using LibraryApp.Data;
-using LibraryApp.Dtos.BorrowerDtos;
+﻿using LibraryApp.Dtos.BorrowerDtos;
 using LibraryApp.Entities;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-
+using AutoMapper;
+using LibraryApp.Common.Results;
+using LibraryApp.Common.Pagination;
+using LibraryApp.Services;
 namespace LibraryApp.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
     public class BorrowersController : ControllerBase
     {
-        private ApplicationDbContext _dbContext;
-        public BorrowersController(ApplicationDbContext dbContext)
+        private readonly IBorrowerService _borrowerService;
+        private readonly IMapper _mapper;
+        private readonly ILogger<BorrowersController> _logger;
+
+        public BorrowersController(IBorrowerService borrowerService, ILogger<BorrowersController> logger, IMapper mapper)
         {
-            _dbContext = dbContext;
+            _borrowerService = borrowerService;
+            _logger = logger;
+            _mapper = mapper;
         }
         
         [HttpGet("GetAllBorrowers")]
-        public async Task<IActionResult> GetAllBorrowers()
+        public async Task<IActionResult> GetAllBorrowers(int pageNumber = 1, int pageSize = 10, string? searchTerm = null)
         {
-            var borrowers = await _dbContext.Borrowers.ToListAsync();
-            if (borrowers == null || !borrowers.Any())
+            if (pageNumber <= 0 || pageSize <= 0)
             {
-                return NotFound("No borrowers found.");
+                return BadRequest("Page number and page size must be greater than zero.");
             }
-            var response = borrowers.Select(b => new GetBorrowerResponse
+            if (pageSize > 20)
             {
-                Name = b.Name,
-                Email = b.Email,
-                MembershipDate = b.MembershipDate
-            }).ToList();
-            return Ok(response);
+                return BadRequest("Page size cannot exceed 20.");
+            }
+
+            var page = await _borrowerService.GetPageAsync(pageNumber, pageSize, searchTerm);
+            var borrowers = page.Data?.ToList() ?? [];
+
+            if (borrowers.Count == 0)
+            {
+                return NotFound(searchTerm != null
+                    ? "No borrowers found matching the search term."
+                    : "No borrowers found.");
+            }
+            _logger.LogInformation($"Total borrowers found: {page.TotalRecords}", borrowers);
+
+            var borrowerResponse = _mapper.Map<List<Borrower>, List<GetBorrowerResponse>>(borrowers);
+            var paginatedResponse = new PaginatedList<GetBorrowerResponse>
+            {
+                Data = borrowerResponse,
+                PageNumber = pageNumber,
+                PageSize = pageSize,
+                TotalRecords = page.TotalRecords
+            };
+            var result = GenericResult<PaginatedList<GetBorrowerResponse>>.Success(paginatedResponse);
+            return Ok(result);
         }
 
         [HttpGet("GetBorrowerById/{id}")]
         public async Task<IActionResult> GetBorrowerById(int id)
         {
-            var borrower = await _dbContext.Borrowers.FindAsync(id);
+            var borrower = await _borrowerService.GetByIdAsync(id);
             if (borrower == null)
             {
                 return NotFound("No such borrower with the passed ID");
             }
-            var response = new GetBorrowerResponse
-            {
-                Name = borrower.Name,
-                Email = borrower.Email,
-                MembershipDate = borrower.MembershipDate
-            };
+            _logger.LogInformation($"Borrower found: {borrower.Name}", borrower);
+            var response = _mapper.Map<Borrower, GetBorrowerResponse>(borrower);
             return Ok(response);
         }
+
 
         [HttpPost("CreateBorrower")]
         public async Task<IActionResult> CreateBorrower(CreateBorrowerRequest request)
         {
-            var borrower = new Borrower
-            {
-                Name = request.Name,
-                Email = request.Email,
-                MembershipDate = request.MembershipDate
-            };
-            await _dbContext.Borrowers.AddAsync(borrower);
-            await _dbContext.SaveChangesAsync();
-            return StatusCode(StatusCodes.Status201Created, new
-            {
-                borrower.Id,
-                borrower.Email,
-                borrower.MembershipDate
-            });
+
+            var borrower = await _borrowerService.CreateAsync(request);
+            _logger.LogInformation($"Borrower created: {borrower.Name}", borrower);
+            return StatusCode(StatusCodes.Status201Created, _mapper.Map<Borrower, GetBorrowerResponse>(borrower));
         }
+
+
         [HttpPut("UpdateBorrower/{id}")]
         public async Task<IActionResult> UpdateBorrower(int id, UpdateBorrowerRequest request)
         {
-            var borrower = await _dbContext.Borrowers.FindAsync(id);
             if (id <= 0)
                 return BadRequest("Invalid borrower ID.");
 
-            if (borrower == null)
-                return NotFound($"Borrower with ID {id} not found.");
+            var result = await _borrowerService.UpdateAsync(id, request);
+            if (!result.IsSuccess)
+                return NotFound(result.Error);
 
-            borrower.Name = request.Name;
-            borrower.Email = request.Email;
-            borrower.MembershipDate = request.MembershipDate;
-
-            _dbContext.Borrowers.Update(borrower);
-
-            await _dbContext.SaveChangesAsync();
-            return Ok(borrower);
+            var borrower = result.Value!;
+            _logger.LogInformation($"Borrower updated: {borrower.Name}", borrower);
+            return Ok(_mapper.Map<Borrower, GetBorrowerResponse>(borrower));
         }
+
+
         [HttpDelete("DeleteBorrower/{id}")]
         public async Task<IActionResult> DeleteBorrower(int id)
         {
-            var borrower = await _dbContext.Borrowers.FindAsync(id);
             if (id <= 0)
                 return BadRequest("Invalid borrower ID.");
 
-            if (borrower == null)
-                return NotFound($"Borrower with ID {id} not found.");
-            borrower.IsDeleted = true;
+            var result = await _borrowerService.DeleteAsync(id);
+            if (!result.IsSuccess)
+                return NotFound(result.Error);
 
-            _dbContext.Borrowers.Update(borrower);
-            await _dbContext.SaveChangesAsync();
-            return Ok($"Borrower with ID {id} has been deleted.");
+            var borrower = result.Value!;
+            _logger.LogInformation($"Borrower deleted: {borrower.Name}", borrower);
+            return Ok(_mapper.Map<Borrower, GetBorrowerResponse>(borrower));
         }
     }
 }

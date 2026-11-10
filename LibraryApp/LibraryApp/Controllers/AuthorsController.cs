@@ -1,9 +1,11 @@
-﻿using LibraryApp.Data;
-using LibraryApp.Dtos.AuthorDtos;
+﻿using LibraryApp.Dtos.AuthorDtos;
 using LibraryApp.Entities;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
+using AutoMapper;
+using LibraryApp.Common.Results;
+using LibraryApp.Common.Pagination;
+using LibraryApp.Services;
 
 namespace LibraryApp.Controllers
 {
@@ -11,96 +13,99 @@ namespace LibraryApp.Controllers
     [ApiController]
     public class AuthorsController : ControllerBase
     {
-        private ApplicationDbContext _dbContext;
+        private readonly IAuthorService _authorService;
+        private readonly IMapper _mapper;
+        private readonly ILogger<AuthorsController> _logger;
 
-        public AuthorsController(ApplicationDbContext dbContext)
+        public AuthorsController(IAuthorService authorService, ILogger<AuthorsController> logger, IMapper mapper)
         {
-            _dbContext = dbContext;
+            _authorService = authorService;
+            _logger = logger;
+            _mapper = mapper;
         }
         [HttpGet("GetAllAuthors")]
-        public async Task<IActionResult> GetAllAuthors()
+        public async Task<IActionResult> GetAllAuthors(int pageNumber = 1, int pageSize = 10, string? searchTerm = null)
         {
-            var authors = await _dbContext.Authors.ToListAsync();
-            if (authors == null || !authors.Any())
+            if (pageNumber <= 0 || pageSize <= 0)
             {
-                return NotFound("No authors found.");
+                return BadRequest("Page number and page size must be greater than zero.");
             }
-            var response = authors.Select(a => new GetAuthorResponse
+            if (pageSize > 20)
             {
-                Name = a.Name,
-                BirthDate = a.BirthDate
-            }).ToList();
-            return Ok(response);
+                return BadRequest("Page size cannot exceed 20.");
+            }
+
+            var page = await _authorService.GetPageAsync(pageNumber, pageSize, searchTerm);
+            var authors = page.Data?.ToList() ?? [];
+
+            if (authors.Count == 0)
+            {
+                return NotFound(searchTerm != null
+                    ? "No authors found matching the search term."
+                    : "No authors found.");
+            }
+            _logger.LogInformation($"Total authors found: {page.TotalRecords}", authors);
+            var authorsResponse = _mapper.Map<List<Author>, List<GetAuthorResponse>>(authors);
+            var paginatedResponse = new PaginatedList<GetAuthorResponse>
+            {
+                Data = authorsResponse,
+                PageNumber = pageNumber,
+                PageSize = pageSize,
+                TotalRecords = page.TotalRecords
+            };
+            var result = GenericResult<PaginatedList<GetAuthorResponse>>.Success(paginatedResponse);
+            return Ok(result);
         }
 
         [HttpGet("GetAuthorById/{id}")]
         public async Task<IActionResult> GetAuthorByID(int id)
         {
-            var Author = await _dbContext.Authors.FindAsync(id);
+            var Author = await _authorService.GetByIdAsync(id);
             if (Author == null)
             {
                 return NotFound("No such author with the passed ID");
             }
-            var response = new GetAuthorResponse
-            {
-                Name = Author.Name,
-                BirthDate = Author.BirthDate
-            };
+            var response = _mapper.Map<Author, GetAuthorResponse>(Author);
+            _logger.LogInformation($"Author found: {response.Name}", response);
             return Ok(response);
         }
         [HttpPost("CreateAuthor")]
         public async Task<IActionResult> CreateAuthor(CreateAuthorRequest request)
         {
-            var author = new Author
-            {
-                Name = request.Name,
-                BirthDate = request.BirthDate
-            };
-
-            await _dbContext.Authors.AddAsync(author);
-            await _dbContext.SaveChangesAsync();
-            return StatusCode(StatusCodes.Status201Created, new
-            {
-                author.Id,
-                author.Name,
-                author.BirthDate
-            });
+            var author = await _authorService.CreateAsync(request);
+            _logger.LogInformation($"Author created: {author.Id} - {author.Name}", author);
+            return StatusCode(StatusCodes.Status201Created, _mapper.Map<Author, GetAuthorResponse>(author));
         }
 
         [HttpPut("UpdateAuthor/{id}")]
         public async Task<IActionResult> UpdateAuthor(int id, UpdateAuthorRequest request)
         {
-            var author = await _dbContext.Authors.FindAsync(id);
             if (id <= 0)
                 return BadRequest("Invalid author ID.");
 
-            if (author == null)
-                return NotFound($"Author with ID {id} not found.");
+            var result = await _authorService.UpdateAsync(id, request);
+            if (!result.IsSuccess)
+                return NotFound(result.Error);
 
-            author.Name = request.Name;
-            author.BirthDate = request.BirthDate;
-
-            _dbContext.Authors.Update(author);
-
-            await _dbContext.SaveChangesAsync();
-            return Ok(author);
+            var author = result.Value!;
+            _logger.LogInformation($"Author updated: {author.Id} - {author.Name}", author);
+            return Ok(_mapper.Map<Author, GetAuthorResponse>(author));
 
         }
 
         [HttpDelete("DeleteAuthor/{id}")]
         public async Task<IActionResult> DeleteAuthor(int id)
         {
-            var author = await _dbContext.Authors.FindAsync(id);
             if (id <= 0)
                 return BadRequest("Invalid author ID.");
 
-            if (author == null)
-                return NotFound($"Author with ID {id} not found.");
-            author.IsDeleted = true;
+            var result = await _authorService.DeleteAsync(id);
+            if (!result.IsSuccess)
+                return NotFound(result.Error);
 
-            _dbContext.Authors.Update(author);
-            await _dbContext.SaveChangesAsync();
-            return Ok($"Author with ID {id} has been deleted.");
+            var author = result.Value!;
+            _logger.LogInformation($"Author deleted: {author.Id} - {author.Name}", author);
+            return Ok(_mapper.Map<Author, GetAuthorResponse>(author));
         }
     }
 }

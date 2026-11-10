@@ -9,6 +9,6 @@ namespace LibraryApp.Entities
         public string Name { get; set; } = string.Empty;
         public string? Email { get; set; }
         public DateOnly MembershipDate { get; set; } = DateOnly.FromDateTime(DateTime.Now);
-        public ICollection<Loan> Loans { get; set; }
+        public ICollection<Loan>? Loans { get; set; }
     }
 }

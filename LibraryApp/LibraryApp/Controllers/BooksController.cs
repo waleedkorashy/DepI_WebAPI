@@ -1,10 +1,11 @@
-﻿using LibraryApp.Data;
-using LibraryApp.Dtos.BookDtos;
+﻿using LibraryApp.Dtos.BookDtos;
 using LibraryApp.Entities;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
+using AutoMapper;
+using LibraryApp.Common.Results;
+using LibraryApp.Common.Pagination;
+using LibraryApp.Services;
 
 namespace LibraryApp.Controllers
 {
@@ -12,113 +13,134 @@ namespace LibraryApp.Controllers
     [ApiController]
     public class BooksController : ControllerBase
     {
-        private ApplicationDbContext _dbContext;
+        private readonly IBookService _bookService;
+        private readonly IMapper _mapper;
+        private readonly ILogger<BooksController> _logger;
 
-        public BooksController(ApplicationDbContext dbContext)
+        public BooksController(IBookService bookService, ILogger<BooksController> logger, IMapper mapper)
         {
-            _dbContext = dbContext;
+            _bookService = bookService;
+            _mapper = mapper;
+            _logger = logger;
         }
+
+
+
 
         [HttpGet("GetAllBooks")]
-        public async Task<IActionResult> GetAllBooks()
+        public async Task<IActionResult> GetAllBooks(int pageNumber = 1, int pageSize = 10, string? searchTerm = null)
         {
-            var Books = await _dbContext.Books.Include(b => b.Author).ToListAsync();
-            if (Books == null || !Books.Any())
+            if (pageNumber <= 0 || pageSize <= 0)
             {
-                return NotFound("No books found.");
+                return BadRequest("Page number and page size must be greater than zero.");
             }
-            var response = Books.Select(b => new GetBookResponse
+            if (pageSize > 20)
             {
-                Title = b.Title,
-                ISBN = b.ISBN,
-                AuthorId = b.AuthorId,
-                AuthorName = b.Author.Name
-            }).ToList();
-            return Ok(response);
+                return BadRequest("Page size cannot exceed 20.");
+            }
+
+            var page = await _bookService.GetPageAsync(pageNumber, pageSize, searchTerm);
+            var books = page.Data?.ToList() ?? [];
+
+            if (books.Count == 0)
+            {
+                return NotFound(searchTerm != null
+                    ? "No books found matching the search term."
+                    : "No books found for the specified page.");
+            }
+            _logger.LogInformation($"Total books found: {page.TotalRecords}", books);
+
+            var booksResponse = _mapper.Map<List<Book>, List<GetBookResponse>>(books);
+            var paginatedResponse = new PaginatedList<GetBookResponse>
+            {
+                Data = booksResponse,
+                PageNumber = pageNumber,
+                PageSize = pageSize,
+                TotalRecords = page.TotalRecords
+            };
+            var result = GenericResult<PaginatedList<GetBookResponse>>.Success(paginatedResponse);
+            _logger.LogInformation($"Returning paginated response for books: Page {pageNumber}, Size {pageSize}", paginatedResponse);
+            return Ok(result);
             
         }
+
+
+
+
 
 
         [HttpGet("GetBookById/{id}")]
         public async Task<IActionResult> GetBookByID(int id)
         {
-            var Book = await _dbContext.Books.Include(b => b.Author).FirstOrDefaultAsync(b => b.Id == id);
-            if (Book == null) 
+            var Book = await _bookService.GetByIdAsync(id);
+
+            if (Book == null)
             {
                 return NotFound("No such book with the passed ID");
             }
-            var response = new GetBookResponse
-            {
-                Title = Book.Title,
-                ISBN = Book.ISBN,
-                AuthorId = Book.AuthorId,
-                AuthorName = Book.Author.Name
-            };
+
+            var response = _mapper.Map<Book, GetBookResponse>(Book);
+            _logger.LogInformation($"Book found: {response.Title}", response);
             return Ok(response);
         }
+
+
+
+
 
         [HttpPost("CreateBook")]
         public async Task<IActionResult> CreateBook(CreateBookRequest request)
         {
-            var author = await _dbContext.Authors.FindAsync(request.AuthorId);
-            if (author == null)
-            {
-                return NotFound($"Author with ID {request.AuthorId} was not found.");
-            }
+            var result = await _bookService.CreateAsync(request);
+            if (!result.IsSuccess)
+                return NotFound(result.Error);
 
-            var book = new Book
-            {
-                Title = request.Title,
-                ISBN = request.ISBN,
-                AuthorId = author.Id,
-                Author = author
-            };
-
-            await _dbContext.Books.AddAsync(book);
-            await _dbContext.SaveChangesAsync();
-            return StatusCode(StatusCodes.Status201Created, new
-            {
-                book.Id,
-                book.Title,
-                book.ISBN,
-                book.AuthorId
-            });
+            var book = result.Value!;
+            _logger.LogInformation($"Book created: {book.Id} - {book.Title}", book);
+            return StatusCode(StatusCodes.Status201Created, _mapper.Map<Book, GetBookResponse>(book));
         }
+
+
+
+
         [HttpPut("UpdateBook/{id}")]
         public async Task<IActionResult> UpdateBook(int id,UpdateBookRequest request)
         {
-            var book = await _dbContext.Books.FindAsync(id);
             if (id <= 0)
                 return BadRequest("Invalid book ID.");
-            
-            if (book == null)
-                return NotFound($"Book with ID {id} not found.");
 
-            book.AuthorId = request.AuthorId;
-            book.Title = request.Title;
-            book.ISBN = request.ISBN;
+            var result = await _bookService.UpdateAsync(id, request);
+            if (!result.IsSuccess)
+                return NotFound(result.Error);
 
-            _dbContext.Books.Update(book);
-
-            await _dbContext.SaveChangesAsync();
-            return Ok(book);
+            var book = result.Value!;
+            _logger.LogInformation($"Book updated: {book.Id} - {book.Title}", book);
+            return Ok(_mapper.Map<Book, GetBookResponse>(book));
 
         }
+
+
+
+
+
+
         [HttpDelete("DeleteBook/{id}")]
             public async Task<IActionResult> DeleteBook(int id)
         {
-            var book = await _dbContext.Books.FindAsync(id);
             if (id <= 0)
                 return BadRequest("Invalid book ID.");
 
-            if (book == null)
-                return NotFound($"Book with ID {id} not found.");
-            book.IsDeleted = true;
+            var result = await _bookService.DeleteAsync(id);
+            if (!result.IsSuccess)
+            {
+                return result.ErrorType == ServiceErrorType.Conflict
+                    ? BadRequest(result.Error)
+                    : NotFound(result.Error);
+            }
 
-            //_dbContext.Books.Remove(book);
-            _dbContext.Books.Update(book);
-            await _dbContext.SaveChangesAsync();
-            return Ok($"Book with ID {id} has been deleted.");
+            var book = result.Value!;
+            _logger.LogInformation($"Book deleted: {book.Id} - {book.Title}", book);
+            return Ok(_mapper.Map<Book, GetBookResponse>(book));
         }
        
         

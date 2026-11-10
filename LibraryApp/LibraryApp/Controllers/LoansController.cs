@@ -1,9 +1,11 @@
-﻿using LibraryApp.Data;
+﻿using AutoMapper;
+using LibraryApp.Common.Pagination;
+using LibraryApp.Common.Results;
 using LibraryApp.Dtos.LoanDtos;
 using LibraryApp.Entities;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
+using LibraryApp.Services;
 
 namespace LibraryApp.Controllers
 {
@@ -11,127 +13,124 @@ namespace LibraryApp.Controllers
     [ApiController]
     public class LoansController : ControllerBase
     {
-        private ApplicationDbContext _dbContext;
+        private readonly ILoanService _loanService;
+        private readonly IMapper _mapper;
+        private readonly ILogger<LoansController> _logger;
 
-        public LoansController(ApplicationDbContext dbContext)
+        public LoansController(ILoanService loanService, IMapper mapper, ILogger<LoansController> logger)
         {
-            _dbContext = dbContext;
+            _loanService = loanService;
+            _mapper = mapper;
+            _logger = logger;
         }
 
         [HttpGet("GetAllLoans")]
-        public async Task<IActionResult> GetAllLoans()
+        public async Task<IActionResult> GetAllLoans(int pageNumber = 1, int pageSize = 10 , string? searchTerm = null)
         {
-            var loans = await _dbContext.Loans.ToListAsync();
-            if (loans == null || !loans.Any())
+            if (pageNumber <= 0 || pageSize <= 0)
             {
-                return NotFound("No loans found.");
+                return BadRequest("Page number and page size must be greater than zero.");
             }
-            var response = loans.Select(l => new GetLoanResponse
+            if (pageSize > 20)
             {
-                BookId = l.BookId,
-                BorrowerId = l.BorrowerId,
-                LoanDate = l.LoanDate,
-                ReturnDate = l.ReturnDate
-            }).ToList();
-            return Ok(response);
+                return BadRequest("Page size cannot exceed 20.");
+            }
+
+            var page = await _loanService.GetPageAsync(pageNumber, pageSize, searchTerm);
+            var loans = page.Data?.ToList() ?? [];
+
+            if (loans.Count == 0)
+            {
+                return NotFound("No loans found for the specified page.");
+            }
+
+            var response = _mapper.Map<List<Loan>, List<GetLoanResponse>>(loans);
+            var paginatedResponse = new PaginatedList<GetLoanResponse>
+            {
+                Data = response,
+                PageNumber = pageNumber,
+                PageSize = pageSize,
+                TotalRecords = page.TotalRecords
+            };
+            var result = GenericResult<PaginatedList<GetLoanResponse>>.Success(paginatedResponse);
+            _logger.LogInformation($"Total loans found: {page.TotalRecords}", response);
+            return Ok(result);
         }
 
-        [HttpGet("{bookId:int}/Loans")]
+        [HttpGet("{bookId:int}/BookLoans")]
         public async Task<IActionResult> GetLoansByBookId(int bookId)
         {
-            var loans = await _dbContext.Loans.Where(l => l.BookId == bookId).ToListAsync();
+            var loans = await _loanService.GetByBookIdAsync(bookId);
             if (loans == null || !loans.Any())
             {
                 return NotFound("No loans found for the specified book.");
             }
-            var response = loans.Select(l => new GetLoanResponse
+            var response = _mapper.Map<List<Loan>, List<GetLoanResponse>>(loans.ToList());
+            _logger.LogInformation($"Total loans found for book ID {bookId}: {response.Count}", response);
+            return Ok(response);
+        }
+        [HttpGet("{borrowerId:int}/BorrowerLoans")]
+        public async Task<IActionResult> GetLoansByBorrowerId(int borrowerId)
+        {
+            var loans = await _loanService.GetByBorrowerIdAsync(borrowerId);
+            if (loans == null || !loans.Any())
             {
-                BookId = l.BookId,
-                BorrowerId = l.BorrowerId,
-                LoanDate = l.LoanDate,
-                ReturnDate = l.ReturnDate
-            }).ToList();
+                return NotFound("No loans found for the specified borrower.");
+            }
+            var response = _mapper.Map<List<Loan>, List<GetLoanResponse>>(loans.ToList());
+            _logger.LogInformation($"Total loans found for borrower ID {borrowerId}: {response.Count}", response);
             return Ok(response);
         }
 
-        [HttpGet("{loanId:int}")]
+        [HttpGet("{loanId:int}/Loan")]
         public async Task<IActionResult> GetLoanById(int loanId)
         {
-            var loan = await _dbContext.Loans.FindAsync(loanId);
+            var loan = await _loanService.GetByIdAsync(loanId);
             if (loan == null)
             {
                 return NotFound("Loan not found.");
             }
-            return Ok(loan);
+            var response = _mapper.Map<Loan, GetLoanResponse>(loan);
+            _logger.LogInformation($"Loan found: {response.Id}", response);
+            return Ok(response);
         }
 
-        [HttpPost("{bookId:int}/Loans")]
-        public async Task<IActionResult> CreateLoan(int bookId, CreateLoanRequest request)
+        [HttpPost("CreateLoan")]
+        public async Task<IActionResult> CreateLoan(CreateLoanRequest request)
         {
-            var book = await _dbContext.Books.FindAsync(bookId);
-            if (book == null)
-            {
-                return NotFound($"Book with ID {bookId} was not found.");
-            }
+            var result = await _loanService.CreateAsync(request);
+            if (!result.IsSuccess)
+                return NotFound(result.Error);
 
-            var borrower = await _dbContext.Borrowers.FindAsync(request.BorrowerId);
-            if (borrower == null)
-            {
-                return NotFound($"Borrower with ID {request.BorrowerId} was not found.");
-            }
+            var loan = result.Value!;
+            _logger.LogInformation($"Loan created: {loan.Id} for Book ID {loan.BookId} and Borrower ID {loan    .BorrowerId}", loan);
 
-            var loan = new Loan
-            {
-                BookId = book.Id,
-                BorrowerId = borrower.Id,
-                LoanDate = request.LoanDate,
-                ReturnDate = request.ReturnDate
-            };
-
-            await _dbContext.Loans.AddAsync(loan);
-            await _dbContext.SaveChangesAsync();
-
-            return StatusCode(StatusCodes.Status201Created, new
-            {
-                loan.Id,
-                loan.BookId,
-                loan.BorrowerId,
-                loan.LoanDate,
-                loan.ReturnDate
-            });
+            return StatusCode(StatusCodes.Status201Created, _mapper.Map<Loan, GetLoanResponse>(loan));
 
         }
-        [HttpPut("{loanId:int}")]
+        [HttpPut("{loanId:int}/UpdateLoan")]
         public async Task<IActionResult> UpdateLoan(int loanId, UpdateLoanRequest request)
         {
-            var loan = await _dbContext.Loans.FindAsync(loanId);
-            if (loan == null)
-            {
-                return NotFound("Loan not found.");
-            }
+            var result = await _loanService.UpdateAsync(loanId, request);
+            if (!result.IsSuccess)
+                return NotFound(result.Error);
 
-            loan.BorrowerId = request.BorrowerId;
-            loan.LoanDate = request.LoanDate;
-            loan.ReturnDate = request.ReturnDate;
+            var loan = result.Value!;
+            _logger.LogInformation($"Loan updated: {loan.Id}", loan);
 
-            await _dbContext.SaveChangesAsync();
-
-            return Ok(loan);
+            return Ok(_mapper.Map<Loan, GetLoanResponse>(loan));
         }
-        [HttpDelete("{loanId:int}")]
+        [HttpDelete("{loanId:int}/DeleteLoan")]
         public async Task<IActionResult> DeleteLoan(int loanId)
         {
-            var loan = await _dbContext.Loans.FindAsync(loanId);
-            if (loan == null)
-            {
-                return NotFound("Loan not found.");
-            }
+            var result = await _loanService.DeleteAsync(loanId);
+            if (!result.IsSuccess)
+                return NotFound(result.Error);
 
-            loan.IsDeleted = true;
-            _dbContext.Loans.Update(loan);
+            var loan = result.Value!;
+            _logger.LogInformation($"Loan deleted: {loan.Id}", loan);
 
-            await _dbContext.SaveChangesAsync();
-            return Ok($"Loan {loanId} deleted successfully.");
+            return Ok(_mapper.Map<Loan, GetLoanResponse>(loan));
         }
     }
 }

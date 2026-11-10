@@ -12,5 +12,6 @@ namespace LibraryApp.Entities
         public Borrower? Borrower { get; set; }
         public DateTime LoanDate { get; set; } = DateTime.Now;
         public DateTime ReturnDate { get; set; } = DateTime.Now.AddDays(14);
+        public int RemainingDays => (ReturnDate - DateTime.Now).Days;
     }
 }
